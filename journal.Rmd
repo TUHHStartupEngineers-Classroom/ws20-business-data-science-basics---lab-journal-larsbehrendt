@@ -16,9 +16,6 @@ output:
 knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
 ```
 
-**IMPORTANT:** You can delete everything in here and start fresh. You might want to start by not deleting anything above this line until you know what that stuff is doing.
-
-
 
 # Challenge 1 - Bike Sales Analysis
 Last compiled: `r Sys.Date()`
@@ -88,7 +85,7 @@ salesbyLocation
 ```
 The results are then visualized.
 
-```{r plot, fig.width=10, fig.height=7}
+```{r plot, fig.width=15, fig.height=10}
 # Visualize Sales by Location
 salesbyLocation %>% ggplot(aes(x = state, y=sales)) +
   geom_col(fill = "#00cccc") +
@@ -146,21 +143,158 @@ salesByLocationAndYear %>%  ggplot(aes(x = year, y=sales, fill= state)) +
 The results show that in most states the revenue has an upward trend. In some states revenue is stagnating or decreasing slightly.
 
 
-# My second post (note the order)
+# Challenge 2 API & Web scraping
 
-Last compiled: `r Sys.Date()`
+## Gathering data via API
 
-I'm writing this tutorial going from the top down. And, this is how it will be printed. So, notice the second post is second in the list. If you want your most recent post to be at the top, then make a new post starting at the top. If you want the oldest first, do, then keep adding to the bottom
+The First task in this challenge is to gather some data via an API. I chose the Spotify API to pull the newest album releases on Spotify in Germany. The Spotify API requires Authorization and therefore the the keys used for Authentification are not included in the code.
 
-# Adding R stuff
+### loading Libraries and Authorization for Spotify API and pulling Data via API
 
-So far this is just a blog where you can write in plain text and serve your writing to a webpage. One of the main purposes of this lab journal is to record your progress learning R. The reason I am asking you to use this process is because you can both make a website, and a lab journal, and learn R all in R-studio. This makes everything really convenient and in the same place. 
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#Challenge 2 API and Webscraping
 
-So, let's say you are learning how to make a histogram in R. For example, maybe you want to sample 100 numbers from a normal distribution with mean = 0, and standard deviation = 1, and then you want to plot a histogram. You can do this right here by using an r code block, like this:
+#libraries
+library(tidyverse)
+library(rvest)
+library(xopen)
+library(jsonlite)
+library(glue)
+library(stringr)
+library(httr)
+library(purrr)
 
-```{r}
-samples <- rnorm(100, mean=0, sd=1)
-hist(samples)
 ```
 
-When you knit this R Markdown document, you will see that the histogram is printed to the page, along with the R code. This document can be set up to hide the R code in the webpage, just delete the comment (hashtag) from the cold folding option in the yaml header up top. For purposes of letting yourself see the code, and me see the code, best to keep it the way that it is. You'll learn that all of these things and more can be customized in each R code block.
+```{r eval=TRUE, include = FALSE, message = FALSE,warning=FALSE}
+clientID = '382c22fa23294b0e9932248d3f3f5c96'
+secret = 'd34057e26ac945e3836b1e238f5c83c2'
+```
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#API -> newest releases on Spotify in Germany
+response = POST(
+  'https://accounts.spotify.com/api/token',
+  accept_json(),
+  authenticate(clientID, secret),
+  body = list(grant_type = 'client_credentials'),
+  encode = 'form',
+  verbose()
+)
+mytoken = content(response)$access_token
+
+HeaderValue = paste0('Bearer ', mytoken)
+resp <- GET(url = "https://api.spotify.com/v1/browse/new-releases?country=DE&limit=50", config = add_headers(authorization = HeaderValue))
+```
+### Manipulating Data and presenting result
+After the data is pulled from the API it has to be manipulated because there are lots of information that are not of interest in this case.
+The information I want to be displayed are the name of the album, the name of the artist, release Date of the album and the number of tracks in the album.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+releaseData <- resp$content %>% rawToChar() %>% fromJSON()
+albums <- releaseData$albums$items
+
+#getArtist -> only gets First artist to avoid problems with dimensions of columns
+
+firstArtist <- function(index){
+  art <- albums$artists[[index]][1,4]
+}
+artistName <- unlist(map(seq_along(albums$artists),firstArtist))
+
+
+albData<- tibble(name = albums$name, artist = artistName, releaseDate = albums$release_date, numberOfTracks = albums$total_tracks)
+
+albData %>% print(n= 10)
+```
+The result shows the latest releases on Spotify Germany.
+
+## Web scraping
+
+The second task was to scrape the website of one of canyons competitors and gather information about the different bikes offered. The database should contain model names and prices.
+I chose to scrape the Site of Rose Bikes. Since they offer quite a lot of different models I decided to also include the bike category in the database for a better overview.
+
+I also scrapped all bike categories available. The css selectors used in the code were obtained by investigating the source code of the Rose Bikes website. All the necessary libraries where already included in the API code above.
+### Getting URLs for the different categories
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+
+#Webscraping
+
+url_base <- "https://www.rosebikes.de"
+url_home <- "https://www.rosebikes.de/fahrr%C3%A4der/mtb"
+
+
+
+#get Categories
+
+html_base <- read_html(url_base)
+bike_categories_selection <- html_base %>% 
+  html_nodes(css = ".main-navigation__list:first-child") %>%
+  html_nodes(css = ".main-navigation-category-with-tiles__link")
+bike_categories_url <- bike_categories_selection %>%
+  html_attr("href") %>% enframe(name ="position", value ="url")
+bikes_categories_name <- bike_categories_selection %>%
+  html_text() %>% str_replace_all(pattern = "\\n","")%>% enframe(name="position", value ="name")
+bikes_categories <- left_join(bikes_categories_name,bike_categories_url)
+
+bikes_categories <- subset(bikes_categories, name != "Sale") #delete sale items
+bikes_categories
+
+```
+Now the Urls and names for all main categories are gathered. Each bike category consists of different bike families. The next step is to get the Urls for the individual bike families across all main categories.
+``````{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+
+#get Urls for families in the categories
+
+getFamilyUrls <- function(category_url,category_name){
+  cat_url <- glue("{url_base}{category_url}")
+  html_cat <- read_html(cat_url)
+  bike_family_urls <- html_cat %>% html_nodes(css = ".catalog-category-bikes__button" ) %>%
+    html_attr('href') %>% 
+    enframe(name = "position", value = "url") %>% mutate(bike_category = category_name) %>% select(url,bike_category)
+}
+
+
+famUrls <- getFamilyUrls(bikes_categories$url[1], bikes_categories$name[1])
+
+#iterate through the categories and append
+for(i in 2:nrow(bikes_categories)){
+  famUrls <-bind_rows(famUrls,getFamilyUrls(bikes_categories$url[i],bikes_categories$name[i]))
+}
+
+```
+The URLs for the bike families are stored together with the name of the main category to enable me to store the category into the database later.
+
+With the URLs for the bike families I can finally gather the information of the individual bike models.
+
+``````{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#get Bike urls
+
+getBikeData <- function(model_cat_url, model_cat_name){
+  bike_cat_url <- glue("{url_base}{model_cat_url}") 
+  
+  bike_cat_html <-read_html(bike_cat_url)
+  
+  bike_Names <- bike_cat_html %>% 
+    html_nodes(css = ".catalog-category-model__title") %>%
+    html_text() %>% str_replace_all(pattern = "\\n","")%>% enframe(name ="position", value ="model")
+  bikePrices <- bike_cat_html %>%
+    html_nodes(css = ".catalog-category-model__price-current-value") %>%
+    html_text() %>% str_replace_all(pattern = "\\n","")%>% enframe(name ="position", value = "price")
+  
+  bikes_Data <- left_join(bike_Names,bikePrices, by= "position") %>% mutate(bike_category = model_cat_name) %>% select(model, price, bike_category)
+}
+
+
+#get Name and price for all bikes
+bikeDataAll <- getBikeData(famUrls$url[1], famUrls$bike_category[1])
+
+for(i in 2:nrow(famUrls)){
+  bikeDataAll <- bind_rows(bikeDataAll, getBikeData(famUrls$url[i],famUrls$bike_category[i]))
+}
+
+print(bikeDataAll, n = Inf)
+
+
+```
+The results show all individual bike models and their prices as well as the main category the belong to.
