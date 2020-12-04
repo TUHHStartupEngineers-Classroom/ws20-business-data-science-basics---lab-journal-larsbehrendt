@@ -1,7 +1,7 @@
 ---
 title: "Journal (reproducible report)"
 author: "Lars Behrendt"
-date: "2020-11-21"
+date: "2020-12-01"
 output:
   html_document:
     toc: true
@@ -9,7 +9,7 @@ output:
     collapsed: false
     number_sections: true
     toc_depth: 3
-    #code_folding: hide
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
@@ -18,23 +18,133 @@ knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
 
 **IMPORTANT:** You can delete everything in here and start fresh. You might want to start by not deleting anything above this line until you know what that stuff is doing.
 
-This is an `.Rmd` file. It is plain text with special features. Any time you write just like this, it will be compiled to normal text in the website. If you put a \# in front of your text, it will create a top level-header.
 
-# Updated my Journalpassword
 
-# My first post
-
+# Challenge 1 - Bike Sales Analysis
 Last compiled: `r Sys.Date()`
 
-Notice that whatever you define as a top level header, automatically gets put into the table of contents bar on the left. 
+The goal of the first challenge is to analyze the sales data of bike manufacturer Canyon for bikes sold in Germany. Two different aspects are of interest: first the sales by state and secondly the sales by state and year.
 
-## Second level header
+## Loading Librarys
+First the libraries used for this challenge need to be loaded. In this case the whole tidyverse, readxl for file operations with the excel data and lubridate are loaded.
 
-You can add more headers by adding more hashtags. These won't be put into the table of contents
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 1.0 Load libraries ----
+library(tidyverse)
+library(readxl) # for Excel Data
+library(lubridate)
+```
 
-### third level header
+## Importing the Sales Data
+The Sales data is stored in Excel files. the library readxl is used to import the data. The data is loaded as a tibble.
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 2.0 Importing Files ----
+bikes <- read_excel("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/01_bike_sales/01_raw_data/bikes.xlsx")
+bikeshops <- read_excel("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/01_bike_sales/01_raw_data/bikeshops.xlsx")
+orderlines <- read_excel("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/01_bike_sales/01_raw_data/orderlines.xlsx")
+```
 
-Here's an even lower level header
+## Preparing Data 
+After Import the sales data must be prepared for the analysis. First the data of the individual files needs to be joined together into one big tibble. The link between the datasets is done via their primary keys. After that the data is wrangled in the way needed for the analysis.
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 3.0 Joining Data ----
+bikeData <- orderlines %>% left_join(bikes, by = c("product.id"="bike.id")) %>% left_join(bikeshops, by = c("customer.id" = "bikeshop.id"))
+
+# 4.0 Wrangling Data ----
+
+#Splitting category into individual sub categories
+bikeData_Wrangled <- bikeData %>% separate(col= category,into = c("category.1", "category.2", "category.3"), sep =" - ") %>% 
+  #Add total price
+  mutate(total.price =price * quantity) %>% 
+  select(-...1, -gender) %>%
+  select(order.id, contains("order"), contains("model"), contains("category"),
+         price, quantity, total.price,
+         everything()) %>%
+  set_names(names(.) %>% str_replace_all("\\.", "_"))
+
+#Splitting Location into City and State
+bikeData_Wrangled_challenge <- bikeData_Wrangled %>% separate(col = location, sep=",", into = c("city", "state")) 
+
+```
+
+## Analysis of the Sales Data
+Now the data is ready to be analyzed. From the big tibble, which contains all the sales data, the needed information are selected and grouped according to the investigated aspect of interest.
+
+### Sales by location
+Fist the sales by location are analyzed.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 5.0 Business Insights ----
+
+# 5.1 Sales by Location ----
+
+# Manipulate Data
+salesbyLocation <- bikeData_Wrangled_challenge %>% mutate(year = year(order_date)) %>% select(year,total_price,state) %>% group_by(state) %>%
+  summarise(sales = sum(total_price)) %>% mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                                                             decimal.mark = ",", 
+                                                                             prefix = "", 
+                                                                             suffix = " €"))
+salesbyLocation
+```
+The results are then visualized.
+
+```{r plot, fig.width=10, fig.height=7}
+# Visualize Sales by Location
+salesbyLocation %>% ggplot(aes(x = state, y=sales)) +
+  geom_col(fill = "#00cccc") +
+  geom_label(aes(label = sales_text)) +
+  scale_y_continuous(labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  labs(
+    title    = "Revenue by state",
+    x = "", # Override defaults for x and y
+    y = "Revenue"
+  ) + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+One can clearly see that there are huge differences in sales revenues across the different states in Germany. By far the largest revenue was created in North-Rhine-Westphalia. Despite being one of the smaller states, Bremen has a very high revenue as well. Especially if you compare Bremen with the other city-states Hamburg and Berlin. Berlins revenue seems to be rather low considering the huge population of Berlin.
+
+### Sales by location and year
+The procedure for the second analysis is the same as before. Starting with manipulating the data in the way needed:
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+
+# 5.2 sales by location and year ----
+
+#manipulate Data
+salesByLocationAndYear <- bikeData_Wrangled_challenge %>% mutate(year = year(order_date)) %>% select(year,total_price,state) %>% group_by(state,year) %>%
+  summarise(sales = sum(total_price)) %>% mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                                                             decimal.mark = ",", 
+                                                                             prefix = "", 
+                                                                             suffix = " €"))
+salesByLocationAndYear
+```
+
+The results can than be visualized:
+
+```{r plot2, fig.width=10, fig.height=7}
+
+#Visualize sales by location and year
+salesByLocationAndYear %>%  ggplot(aes(x = year, y=sales, fill= state)) +
+  geom_col() +
+  facet_wrap(~state) +
+  scale_y_continuous(labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  labs(
+    title    = "Revenue by year and state",
+    x = "Year", # Override defaults for x and y
+    y = "Revenue",
+    fill = "state"
+  ) + theme(legend.position = "bottom") +
+  geom_smooth(method = "lm" , se = F) # adding trendline
+
+```
+
+The results show that in most states the revenue has an upward trend. In some states revenue is stagnating or decreasing slightly.
+
 
 # My second post (note the order)
 
