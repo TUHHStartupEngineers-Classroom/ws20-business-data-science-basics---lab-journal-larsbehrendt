@@ -163,6 +163,7 @@ library(glue)
 library(stringr)
 library(httr)
 library(purrr)
+library(glue)
 
 ```
 
@@ -280,7 +281,7 @@ getBikeData <- function(model_cat_url, model_cat_name){
     html_text() %>% str_replace_all(pattern = "\\n","")%>% enframe(name ="position", value ="model")
   bikePrices <- bike_cat_html %>%
     html_nodes(css = ".catalog-category-model__price-current-value") %>%
-    html_text() %>% str_replace_all(pattern = "\\n","")%>% enframe(name ="position", value = "price")
+    html_text() %>% str_replace_all(pattern = "\\n","") %>% str_replace_all(pattern = "€","") %>% str_replace_all(pattern = ",00","") %>% str_replace_all(pattern = "\\.","") %>% str_replace_all(pattern = "\\s","") %>% as.numeric() %>% enframe(name ="position", value = "price")
   
   bikes_Data <- left_join(bike_Names,bikePrices, by= "position") %>% mutate(bike_category = model_cat_name) %>% select(model, price, bike_category)
 }
