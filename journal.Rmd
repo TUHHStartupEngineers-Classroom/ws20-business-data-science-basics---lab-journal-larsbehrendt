@@ -457,3 +457,111 @@ The IDs of the mainclasses correspond to the following descriptions (source: htt
 * 370 = Multiplex communications
 * 358 = Facsimile and static presentation processing
 
+# Challenge 4 - Visualization Pt.1
+In challenge 4 the cummulative cases of COVID-19 are to be plotted for different countries.
+
+```{r plot3, fig.width=10, fig.height=7}
+#Challenge visualization
+
+library(tidyverse)
+library(lubridate)
+library("RColorBrewer")
+covid_data_tbl <- read_csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv") %>%   mutate(date= dmy(dateRep))
+
+countries <- c("Germany","United_Kingdom","France", "Spain", "United_States_of_America")
+
+covid_data_sorted <- covid_data_tbl %>% group_by(countriesAndTerritories) %>% filter(countriesAndTerritories %in% countries)
+
+
+#generating cumsums of cases
+covid_data_europe <- covid_data_tbl %>% group_by(continentExp) %>% filter(continentExp =="Europe") %>%arrange(by = date)  %>% mutate("Europe" = cumsum(cases)) 
+
+covid_data_germany <- covid_data_sorted %>% filter(countriesAndTerritories =="Germany") %>% arrange(by = date) %>% select(date,cases) %>% mutate("Germany" = cumsum(cases))
+covid_data_UK <- covid_data_sorted %>% filter(countriesAndTerritories =="United_Kingdom") %>% arrange(by = date) %>%select(date,cases) %>% mutate("United_Kingdom" = cumsum(cases))
+covid_data_france <- covid_data_sorted %>% filter(countriesAndTerritories =="France") %>% arrange(by = date) %>%select(date,cases) %>% mutate("France" = cumsum(cases))
+covid_data_spain <- covid_data_sorted %>% filter(countriesAndTerritories =="Spain") %>% arrange(by = date) %>%select(date,cases) %>% mutate("Spain" = cumsum(cases))
+covid_data_US <- covid_data_sorted %>% filter(countriesAndTerritories =="United_States_of_America") %>% arrange(by = date) %>%select(date,cases) %>% mutate("United_States" = cumsum(cases))
+
+dataCombined <- covid_data_europe %>%
+  left_join(covid_data_germany, by="date") %>%
+  left_join(covid_data_UK, by="date") %>%
+  left_join(covid_data_france, by="date")%>%
+  left_join(covid_data_spain, by="date") %>%
+  left_join(covid_data_US, by="date") %>%
+  select(date,Europe,Germany,United_Kingdom,France,Spain,United_States) 
+
+
+dataCombined <- dataCombined %>% ungroup() %>% select(-continentExp)
+
+#plotting
+dataCombined %>%
+  pivot_longer(.,cols = c(Germany,United_Kingdom,France,Spain,United_States,Europe), names_to= "Var", values_to = "Val" ) %>%
+  ggplot(aes( x= date, y = Val, fill = Var, color = Var)) +
+  scale_color_manual(values=c("#69b3a2", "purple", "black", "blue", "red", "orange"))+ 
+  theme_dark() +
+  geom_line() + 
+  labs(
+    title = "COVID-19 confirmed cases",
+    x = "Year 2020",
+    y = "Cumulative cases",
+    color = "Country"
+  )+ theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::unit_format(unit = "M", scale = 1e-6)) +
+  scale_x_date(date_breaks = "1 month",
+               date_labels = "%B") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+# Challenge 5 - Visualization Pt.2
+In the last challenge the mortality rates of COVID-19 shall be visualized. The task is to plot a world map containing information about the mortality rates.
+
+```{r plot4, fig.width=12, fig.height=7}
+#Challenge 5
+library(mapdata)
+library(scales)
+world <- map_data("world")
+
+covid_data_world <- covid_data_tbl %>% 
+  mutate(across(countriesAndTerritories, str_replace_all, "_", " ")) %>%
+  mutate(countriesAndTerritories = case_when(
+    
+    countriesAndTerritories == "United Kingdom" ~ "UK",
+    countriesAndTerritories == "United States of America" ~ "USA",
+    countriesAndTerritories == "Czechia" ~ "Czech Republic",
+    TRUE ~ countriesAndTerritories
+    
+  ))
+
+#select 04.12.2020 as date from covidData
+covidDataMap <- covid_data_world %>% 
+  group_by(countriesAndTerritories) %>% arrange(date) %>%
+  mutate("total_deaths" = cumsum(deaths)) %>% 
+  ungroup() %>% mutate("mortality_rate" = total_deaths / popData2019) %>%
+  filter(date == dmy("04/12/2020"))
+  
+
+mortalityData <- covidDataMap %>% select(countriesAndTerritories,mortality_rate)
+
+#joining mortality rate with geographical data
+covidWorldMap <- world %>% left_join(mortalityData, by =c("region" = "countriesAndTerritories"))
+
+covidWorldMap %>% ggplot() +
+  geom_map(aes(map_id = region, x = long, y =lat, fill = mortality_rate), map = world,color = "darkgrey" ) +
+  scale_fill_continuous(breaks=breaks_width(0.00025),low ="#ea4440", high="#2f142c", labels = scales::label_percent()) +
+  labs(
+    title = "COVID-19 mortality rate",
+    x = "",
+    y = "",
+    fill = "mortality rate",
+    caption ="Date: 12/04/2020"
+  ) + theme(
+    axis.text.x=element_blank(),
+    axis.text.y=element_blank(),
+    axis.ticks=element_blank(),
+    axis.title.x=element_blank(),
+    axis.title.y=element_blank()
+  ) 
+
+```
