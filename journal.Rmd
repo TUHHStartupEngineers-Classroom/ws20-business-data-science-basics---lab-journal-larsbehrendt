@@ -268,7 +268,7 @@ The URLs for the bike families are stored together with the name of the main cat
 
 With the URLs for the bike families I can finally gather the information of the individual bike models.
 
-``````{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
 #get Bike urls
 
 getBikeData <- function(model_cat_url, model_cat_name){
@@ -299,3 +299,161 @@ print(bikeDataAll, n = Inf)
 
 ```
 The results show all individual bike models and their prices as well as the main category the belong to.
+
+# Challenge 3 - Data Wrangling
+In the third challenge three questions regarding patents have to be answered:
+
+1. Which US company has the most patents?
+2. Which US company had the most patents granted in 2019?
+3. What are the top 5 main classes of the patents of the ten companies from around the world with the most patents?
+
+We are supposed to list the top ten companies for question 1 and 2 and the top five companies for the third question.
+
+The data used in this challenge is from the United States Patent and Trademark Office.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#Challenge 3 Patents
+
+#loading libraries
+
+# Tidyverse
+library(tidyverse)
+library(vroom)
+
+# Data Table
+library(data.table)
+library(lubridate)
+
+```
+
+```{r eval=FALSE, include = TRUE, message = FALSE,warning=FALSE}
+#Importing Data
+col_types <- list(
+  patent_id = col_character(),
+  type = col_character(),
+  number = col_character(),
+  country = col_character(),
+  date = col_date("%Y-%m-%d"),
+  abstract = col_character(),
+  title = col_character(),
+  kind = col_character(),
+  num_claims = col_double(),
+  filename = col_character(),
+  withdrawn = col_double()
+)
+
+patent_tbl <- vroom(
+  file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/patent.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+col_types <- list(
+  assignee_id = col_character(),
+  type = col_character(),
+  name_first = col_character(),
+  name_last = col_character(),
+  organization = col_character()
+)
+
+assignee_tbl <- vroom(
+  file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+
+col_types <- list(
+  patent_id = col_character(),
+  assignee_id = col_character(),
+  location_id = col_character()
+)
+
+patent_assignee_tbl <- vroom(
+  file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/patent_assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+  
+  
+  col_types <- list(
+   uuid = col_character(),
+    patent_id = col_character(),
+    mainclass_id = col_character(),
+    subclass_id = col_character(),
+    sequence = col_character()
+  )
+  
+  uspc_tbl <- vroom(
+    file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/uspc.tsv", 
+    delim      = "\t", 
+    col_types  = col_types,
+    na         = c("", "NA", "NULL")
+  )
+  
+  #converting to data table
+  setDT(patent_tbl)
+  setDT(assignee_tbl)
+  setDT(patent_assignee_tbl)
+  setDT(uspc_tbl)
+  
+  #setting keys
+  setkey(patent_tbl,id, number)
+  setkey(patent_assignee_tbl,patent_id)
+  setkey(assignee_tbl,id)
+  setkey(uspc_tbl,uuid)
+  
+  #First Question -> US company with the most patents, Listing the top 10
+  patent_data <- patent_assignee_tbl %>% left_join(assignee_tbl,by= c("assignee_id" = "id"))
+  
+  mostPatents <- patent_data[type =="2",.N, by = organization] %>% arrange(desc(N)) %>%  slice(1:10)
+  print(mostPatents, n=Inf)
+  
+  #Second Question -> Us company with most new patents in 2019
+  patent_data_us <-patent_data[type =="2"]
+  patent_data_us <- merge(patent_data_us, patent_tbl, by.x="patent_id", by.y="number", all.x = T)
+  
+  
+  mostPatents2019 <- patent_data_us[year(date) == 2019,.N, by = organization] %>% arrange(desc(N)) %>% slice(1:10)
+  print(mostPatents2019, n=Inf)
+  
+  #Third question -> what is the most innovative tech sector -> Top 5 USPTO main classes
+  
+  mostPatentsWorldwide <- patent_data[,.N, by = assignee_id] %>% arrange(desc(N)) %>%  slice(1:10) #get Top ten
+  mostPatentsWorld <- mostPatentsWorldwide %>% left_join(assignee_tbl, by= c("assignee_id" = "id"))  #add Names to top Ten
+  
+  patentsOfTopTen <- patent_assignee_tbl %>% inner_join(mostPatentsWorld, by="assignee_id") #get all Patents of top ten
+  
+  patentsCombined <- uspc_tbl %>% inner_join(patentsOfTopTen, by="patent_id") #combine the data with data from uspc tbl
+  
+  topMainClasses <- patentsCombined[,.N, by = mainclass_id] %>% arrange(desc(N)) %>% slice(1:5)
+  print(topMainClasses,n=Inf)
+
+```
+The data is to big to be handled by the journal, therefore the results for each question was calculated locally, stored and is loaded in the next chunk to generate the printout messages.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}  
+#load locally stored data
+mostPatents <- read_rds("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/Question1_mostPatents.rds")
+mostPatents2019 <-read_rds("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/Question2_mostPatents2019.rds")
+topMainClasses <- read_rds("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/Question3_topMainclasses.rds")
+
+#print out results
+print(mostPatents, n=Inf)
+print(mostPatents2019, n=Inf)
+print(topMainClasses,n=Inf)
+
+```
+
+The results show the top companies for the questions 1 and 2 as well as the top mainclasses for question 3. Additionally the number of patents for each company or mainclass are printed.
+The IDs of the mainclasses correspond to the following descriptions (source: https://www.uspto.gov/web/patents/classification/selectnumwithtitle.htm):
+
+* 257 = Active solid-state devices (e.g., transistors, solid-state diodes)
+* 438 = Semiconductor device manufacturing: process
+* 365 = Static information storage and retrieval
+* 370 = Multiplex communications
+* 358 = Facsimile and static presentation processing
+
