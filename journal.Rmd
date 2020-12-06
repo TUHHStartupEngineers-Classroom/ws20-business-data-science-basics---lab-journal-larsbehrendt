@@ -466,6 +466,8 @@ In challenge 4 the cummulative cases of COVID-19 are to be plotted for different
 library(tidyverse)
 library(lubridate)
 library("RColorBrewer")
+library(ggrepel)
+
 covid_data_tbl <- read_csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv") %>%   mutate(date= dmy(dateRep))
 
 countries <- c("Germany","United_Kingdom","France", "Spain", "United_States_of_America")
@@ -482,24 +484,28 @@ covid_data_france <- covid_data_sorted %>% filter(countriesAndTerritories =="Fra
 covid_data_spain <- covid_data_sorted %>% filter(countriesAndTerritories =="Spain") %>% arrange(by = date) %>%select(date,cases) %>% mutate("Spain" = cumsum(cases))
 covid_data_US <- covid_data_sorted %>% filter(countriesAndTerritories =="United_States_of_America") %>% arrange(by = date) %>%select(date,cases) %>% mutate("United_States" = cumsum(cases))
 
-dataCombined <- covid_data_europe %>%
-  left_join(covid_data_germany, by="date") %>%
+dataCombined <- covid_data_germany %>%
   left_join(covid_data_UK, by="date") %>%
   left_join(covid_data_france, by="date")%>%
   left_join(covid_data_spain, by="date") %>%
   left_join(covid_data_US, by="date") %>%
-  select(date,Europe,Germany,United_Kingdom,France,Spain,United_States) 
+  select(date,Germany,United_Kingdom,France,Spain,United_States) 
 
 
-dataCombined <- dataCombined %>% ungroup() %>% select(-continentExp)
-
+dataCombined <- dataCombined %>% ungroup() 
+dataCombinedPlot <- dataCombined %>% pivot_longer(.,cols = c(Germany,United_Kingdom,France,Spain,United_States), names_to= "Var", values_to = "Val" )
+dataLabels <- dataCombinedPlot %>% filter(date == dmy("05/12/2020"))
 #plotting
-dataCombined %>%
-  pivot_longer(.,cols = c(Germany,United_Kingdom,France,Spain,United_States,Europe), names_to= "Var", values_to = "Val" ) %>%
+dataCombinedPlot %>%
   ggplot(aes( x= date, y = Val, fill = Var, color = Var)) +
-  scale_color_manual(values=c("#69b3a2", "purple", "black", "blue", "red", "orange"))+ 
+  scale_color_manual(values=c("#69b3a2", "purple", "black", "blue", "red"))+ 
   theme_dark() +
   geom_line() + 
+  geom_label_repel(
+    aes(label = Val), data = dataLabels,
+    fontface ="plain",color="black", size = 3,
+    force = 10
+  ) +
   labs(
     title = "COVID-19 confirmed cases",
     x = "Year 2020",
@@ -510,6 +516,7 @@ dataCombined %>%
   scale_x_date(date_breaks = "1 month",
                date_labels = "%B") + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 ```
 
