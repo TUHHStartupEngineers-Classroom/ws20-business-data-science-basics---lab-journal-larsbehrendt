@@ -1,7 +1,7 @@
 ---
 title: "Journal (reproducible report)"
-author: "Joschka Schwarz"
-date: "2020-11-05"
+author: "Lars Behrendt"
+date: "2020-12-01"
 output:
   html_document:
     toc: true
@@ -9,46 +9,566 @@ output:
     collapsed: false
     number_sections: true
     toc_depth: 3
-    #code_folding: hide
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
 ```
 
-**IMPORTANT:** You can delete everything in here and start fresh. You might want to start by not deleting anything above this line until you know what that stuff is doing.
 
-This is an `.Rmd` file. It is plain text with special features. Any time you write just like this, it will be compiled to normal text in the website. If you put a \# in front of your text, it will create a top level-header.
-
-# My first post
-
+# Challenge 1 - Bike Sales Analysis
 Last compiled: `r Sys.Date()`
 
-Notice that whatever you define as a top level header, automatically gets put into the table of contents bar on the left. 
+The goal of the first challenge is to analyze the sales data of bike manufacturer Canyon for bikes sold in Germany. Two different aspects are of interest: first the sales by state and secondly the sales by state and year.
 
-## Second level header
+## Loading Librarys
+First the libraries used for this challenge need to be loaded. In this case the whole tidyverse, readxl for file operations with the excel data and lubridate are loaded.
 
-You can add more headers by adding more hashtags. These won't be put into the table of contents
-
-### third level header
-
-Here's an even lower level header
-
-# My second post (note the order)
-
-Last compiled: `r Sys.Date()`
-
-I'm writing this tutorial going from the top down. And, this is how it will be printed. So, notice the second post is second in the list. If you want your most recent post to be at the top, then make a new post starting at the top. If you want the oldest first, do, then keep adding to the bottom
-
-# Adding R stuff
-
-So far this is just a blog where you can write in plain text and serve your writing to a webpage. One of the main purposes of this lab journal is to record your progress learning R. The reason I am asking you to use this process is because you can both make a website, and a lab journal, and learn R all in R-studio. This makes everything really convenient and in the same place. 
-
-So, let's say you are learning how to make a histogram in R. For example, maybe you want to sample 100 numbers from a normal distribution with mean = 0, and standard deviation = 1, and then you want to plot a histogram. You can do this right here by using an r code block, like this:
-
-```{r}
-samples <- rnorm(100, mean=0, sd=1)
-hist(samples)
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 1.0 Load libraries ----
+library(tidyverse)
+library(readxl) # for Excel Data
+library(lubridate)
 ```
 
-When you knit this R Markdown document, you will see that the histogram is printed to the page, along with the R code. This document can be set up to hide the R code in the webpage, just delete the comment (hashtag) from the cold folding option in the yaml header up top. For purposes of letting yourself see the code, and me see the code, best to keep it the way that it is. You'll learn that all of these things and more can be customized in each R code block.
+## Importing the Sales Data
+The Sales data is stored in Excel files. the library readxl is used to import the data. The data is loaded as a tibble.
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 2.0 Importing Files ----
+bikes <- read_excel("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/01_bike_sales/01_raw_data/bikes.xlsx")
+bikeshops <- read_excel("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/01_bike_sales/01_raw_data/bikeshops.xlsx")
+orderlines <- read_excel("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/01_bike_sales/01_raw_data/orderlines.xlsx")
+```
+
+## Preparing Data 
+After Import the sales data must be prepared for the analysis. First the data of the individual files needs to be joined together into one big tibble. The link between the datasets is done via their primary keys. After that the data is wrangled in the way needed for the analysis.
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 3.0 Joining Data ----
+bikeData <- orderlines %>% left_join(bikes, by = c("product.id"="bike.id")) %>% left_join(bikeshops, by = c("customer.id" = "bikeshop.id"))
+
+# 4.0 Wrangling Data ----
+
+#Splitting category into individual sub categories
+bikeData_Wrangled <- bikeData %>% separate(col= category,into = c("category.1", "category.2", "category.3"), sep =" - ") %>% 
+  #Add total price
+  mutate(total.price =price * quantity) %>% 
+  select(-...1, -gender) %>%
+  select(order.id, contains("order"), contains("model"), contains("category"),
+         price, quantity, total.price,
+         everything()) %>%
+  set_names(names(.) %>% str_replace_all("\\.", "_"))
+
+#Splitting Location into City and State
+bikeData_Wrangled_challenge <- bikeData_Wrangled %>% separate(col = location, sep=",", into = c("city", "state")) 
+
+```
+
+## Analysis of the Sales Data
+Now the data is ready to be analyzed. From the big tibble, which contains all the sales data, the needed information are selected and grouped according to the investigated aspect of interest.
+
+### Sales by location
+Fist the sales by location are analyzed.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+# 5.0 Business Insights ----
+
+# 5.1 Sales by Location ----
+
+# Manipulate Data
+salesbyLocation <- bikeData_Wrangled_challenge %>% mutate(year = year(order_date)) %>% select(year,total_price,state) %>% group_by(state) %>%
+  summarise(sales = sum(total_price)) %>% mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                                                             decimal.mark = ",", 
+                                                                             prefix = "", 
+                                                                             suffix = " €"))
+salesbyLocation
+```
+The results are then visualized.
+
+```{r plot, fig.width=15, fig.height=10}
+# Visualize Sales by Location
+salesbyLocation %>% ggplot(aes(x = state, y=sales)) +
+  geom_col(fill = "#00cccc") +
+  geom_label(aes(label = sales_text)) +
+  scale_y_continuous(labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  labs(
+    title    = "Revenue by state",
+    x = "", # Override defaults for x and y
+    y = "Revenue"
+  ) + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+One can clearly see that there are huge differences in sales revenues across the different states in Germany. By far the largest revenue was created in North-Rhine-Westphalia. Despite being one of the smaller states, Bremen has a very high revenue as well. Especially if you compare Bremen with the other city-states Hamburg and Berlin. Berlins revenue seems to be rather low considering the huge population of Berlin.
+
+### Sales by location and year
+The procedure for the second analysis is the same as before. Starting with manipulating the data in the way needed:
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+
+# 5.2 sales by location and year ----
+
+#manipulate Data
+salesByLocationAndYear <- bikeData_Wrangled_challenge %>% mutate(year = year(order_date)) %>% select(year,total_price,state) %>% group_by(state,year) %>%
+  summarise(sales = sum(total_price)) %>% mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                                                             decimal.mark = ",", 
+                                                                             prefix = "", 
+                                                                             suffix = " €"))
+salesByLocationAndYear
+```
+
+The results can than be visualized:
+
+```{r plot2, fig.width=10, fig.height=7}
+
+#Visualize sales by location and year
+salesByLocationAndYear %>%  ggplot(aes(x = year, y=sales, fill= state)) +
+  geom_col() +
+  facet_wrap(~state) +
+  scale_y_continuous(labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  labs(
+    title    = "Revenue by year and state",
+    x = "Year", # Override defaults for x and y
+    y = "Revenue",
+    fill = "state"
+  ) + theme(legend.position = "bottom") +
+  geom_smooth(method = "lm" , se = F) # adding trendline
+
+```
+
+The results show that in most states the revenue has an upward trend. In some states revenue is stagnating or decreasing slightly.
+
+
+# Challenge 2 API & Web scraping
+
+## Gathering data via API
+
+The First task in this challenge is to gather some data via an API. I chose the Spotify API to pull the newest album releases on Spotify in Germany. The Spotify API requires Authorization and therefore the the keys used for Authentification are not included in the code.
+
+### loading Libraries and Authorization for Spotify API and pulling Data via API
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#Challenge 2 API and Webscraping
+
+#libraries
+library(tidyverse)
+library(rvest)
+library(xopen)
+library(jsonlite)
+library(glue)
+library(stringr)
+library(httr)
+library(purrr)
+library(glue)
+
+```
+
+```{r eval=TRUE, include = FALSE, message = FALSE,warning=FALSE}
+clientID = '382c22fa23294b0e9932248d3f3f5c96'
+secret = 'd34057e26ac945e3836b1e238f5c83c2'
+```
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#API -> newest releases on Spotify in Germany
+response = POST(
+  'https://accounts.spotify.com/api/token',
+  accept_json(),
+  authenticate(clientID, secret),
+  body = list(grant_type = 'client_credentials'),
+  encode = 'form',
+  verbose()
+)
+mytoken = content(response)$access_token
+
+HeaderValue = paste0('Bearer ', mytoken)
+resp <- GET(url = "https://api.spotify.com/v1/browse/new-releases?country=DE&limit=50", config = add_headers(authorization = HeaderValue))
+```
+### Manipulating Data and presenting result
+After the data is pulled from the API it has to be manipulated because there are lots of information that are not of interest in this case.
+The information I want to be displayed are the name of the album, the name of the artist, release Date of the album and the number of tracks in the album.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+releaseData <- resp$content %>% rawToChar() %>% fromJSON()
+albums <- releaseData$albums$items
+
+#getArtist -> only gets First artist to avoid problems with dimensions of columns
+
+firstArtist <- function(index){
+  art <- albums$artists[[index]][1,4]
+}
+artistName <- unlist(map(seq_along(albums$artists),firstArtist))
+
+
+albData<- tibble(name = albums$name, artist = artistName, releaseDate = albums$release_date, numberOfTracks = albums$total_tracks)
+
+albData %>% print(n= 10)
+```
+The result shows the latest releases on Spotify Germany.
+
+## Web scraping
+
+The second task was to scrape the website of one of canyons competitors and gather information about the different bikes offered. The database should contain model names and prices.
+I chose to scrape the Site of Rose Bikes. Since they offer quite a lot of different models I decided to also include the bike category in the database for a better overview.
+
+I also scrapped all bike categories available. The css selectors used in the code were obtained by investigating the source code of the Rose Bikes website. All the necessary libraries where already included in the API code above.
+### Getting URLs for the different categories
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+
+#Webscraping
+
+url_base <- "https://www.rosebikes.de"
+url_home <- "https://www.rosebikes.de/fahrr%C3%A4der/mtb"
+
+
+
+#get Categories
+
+html_base <- read_html(url_base)
+bike_categories_selection <- html_base %>% 
+  html_nodes(css = ".main-navigation__list:first-child") %>%
+  html_nodes(css = ".main-navigation-category-with-tiles__link")
+bike_categories_url <- bike_categories_selection %>%
+  html_attr("href") %>% enframe(name ="position", value ="url")
+bikes_categories_name <- bike_categories_selection %>%
+  html_text() %>% str_replace_all(pattern = "\\n","")%>% enframe(name="position", value ="name")
+bikes_categories <- left_join(bikes_categories_name,bike_categories_url)
+
+bikes_categories <- subset(bikes_categories, name != "Sale") #delete sale items
+bikes_categories
+
+```
+Now the Urls and names for all main categories are gathered. Each bike category consists of different bike families. The next step is to get the Urls for the individual bike families across all main categories.
+``````{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+
+#get Urls for families in the categories
+
+getFamilyUrls <- function(category_url,category_name){
+  cat_url <- glue("{url_base}{category_url}")
+  html_cat <- read_html(cat_url)
+  bike_family_urls <- html_cat %>% html_nodes(css = ".catalog-category-bikes__button" ) %>%
+    html_attr('href') %>% 
+    enframe(name = "position", value = "url") %>% mutate(bike_category = category_name) %>% select(url,bike_category)
+}
+
+
+famUrls <- getFamilyUrls(bikes_categories$url[1], bikes_categories$name[1])
+
+#iterate through the categories and append
+for(i in 2:nrow(bikes_categories)){
+  famUrls <-bind_rows(famUrls,getFamilyUrls(bikes_categories$url[i],bikes_categories$name[i]))
+}
+
+```
+The URLs for the bike families are stored together with the name of the main category to enable me to store the category into the database later.
+
+With the URLs for the bike families I can finally gather the information of the individual bike models.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#get Bike urls
+
+getBikeData <- function(model_cat_url, model_cat_name){
+  bike_cat_url <- glue("{url_base}{model_cat_url}") 
+  
+  bike_cat_html <-read_html(bike_cat_url)
+  
+  bike_Names <- bike_cat_html %>% 
+    html_nodes(css = ".catalog-category-model__title") %>%
+    html_text() %>% str_replace_all(pattern = "\\n","")%>% enframe(name ="position", value ="model")
+  bikePrices <- bike_cat_html %>%
+    html_nodes(css = ".catalog-category-model__price-current-value") %>%
+    html_text() %>% str_replace_all(pattern = "\\n","") %>% str_replace_all(pattern = "€","") %>% str_replace_all(pattern = ",00","") %>% str_replace_all(pattern = "\\.","") %>% str_replace_all(pattern = "\\s","") %>% as.numeric() %>% enframe(name ="position", value = "price")
+  
+  bikes_Data <- left_join(bike_Names,bikePrices, by= "position") %>% mutate(bike_category = model_cat_name) %>% select(model, price, bike_category)
+}
+
+
+#get Name and price for all bikes
+bikeDataAll <- getBikeData(famUrls$url[1], famUrls$bike_category[1])
+
+for(i in 2:nrow(famUrls)){
+  bikeDataAll <- bind_rows(bikeDataAll, getBikeData(famUrls$url[i],famUrls$bike_category[i]))
+}
+
+print(bikeDataAll, n = Inf)
+
+
+```
+The results show all individual bike models and their prices as well as the main category the belong to.
+
+# Challenge 3 - Data Wrangling
+In the third challenge three questions regarding patents have to be answered:
+
+1. Which US company has the most patents?
+2. Which US company had the most patents granted in 2019?
+3. What are the top 5 main classes of the patents of the ten companies from around the world with the most patents?
+
+We are supposed to list the top ten companies for question 1 and 2 and the top five companies for the third question.
+
+The data used in this challenge is from the United States Patent and Trademark Office.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}
+#Challenge 3 Patents
+
+#loading libraries
+
+# Tidyverse
+library(tidyverse)
+library(vroom)
+
+# Data Table
+library(data.table)
+library(lubridate)
+
+```
+
+```{r eval=FALSE, include = TRUE, message = FALSE,warning=FALSE}
+#Importing Data
+col_types <- list(
+  patent_id = col_character(),
+  type = col_character(),
+  number = col_character(),
+  country = col_character(),
+  date = col_date("%Y-%m-%d"),
+  abstract = col_character(),
+  title = col_character(),
+  kind = col_character(),
+  num_claims = col_double(),
+  filename = col_character(),
+  withdrawn = col_double()
+)
+
+patent_tbl <- vroom(
+  file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/patent.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+col_types <- list(
+  assignee_id = col_character(),
+  type = col_character(),
+  name_first = col_character(),
+  name_last = col_character(),
+  organization = col_character()
+)
+
+assignee_tbl <- vroom(
+  file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+
+
+col_types <- list(
+  patent_id = col_character(),
+  assignee_id = col_character(),
+  location_id = col_character()
+)
+
+patent_assignee_tbl <- vroom(
+  file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/patent_assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL")
+)
+  
+  
+  col_types <- list(
+   uuid = col_character(),
+    patent_id = col_character(),
+    mainclass_id = col_character(),
+    subclass_id = col_character(),
+    sequence = col_character()
+  )
+  
+  uspc_tbl <- vroom(
+    file       = "J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/uspc.tsv", 
+    delim      = "\t", 
+    col_types  = col_types,
+    na         = c("", "NA", "NULL")
+  )
+  
+  #converting to data table
+  setDT(patent_tbl)
+  setDT(assignee_tbl)
+  setDT(patent_assignee_tbl)
+  setDT(uspc_tbl)
+  
+  #setting keys
+  setkey(patent_tbl,id, number)
+  setkey(patent_assignee_tbl,patent_id)
+  setkey(assignee_tbl,id)
+  setkey(uspc_tbl,uuid)
+  
+  #First Question -> US company with the most patents, Listing the top 10
+  patent_data <- patent_assignee_tbl %>% left_join(assignee_tbl,by= c("assignee_id" = "id"))
+  
+  mostPatents <- patent_data[type =="2",.N, by = organization] %>% arrange(desc(N)) %>%  slice(1:10)
+  print(mostPatents, n=Inf)
+  
+  #Second Question -> Us company with most new patents in 2019
+  patent_data_us <-patent_data[type =="2"]
+  patent_data_us <- merge(patent_data_us, patent_tbl, by.x="patent_id", by.y="number", all.x = T)
+  
+  
+  mostPatents2019 <- patent_data_us[year(date) == 2019,.N, by = organization] %>% arrange(desc(N)) %>% slice(1:10)
+  print(mostPatents2019, n=Inf)
+  
+  #Third question -> what is the most innovative tech sector -> Top 5 USPTO main classes
+  
+  mostPatentsWorldwide <- patent_data[,.N, by = assignee_id] %>% arrange(desc(N)) %>%  slice(1:10) #get Top ten
+  mostPatentsWorld <- mostPatentsWorldwide %>% left_join(assignee_tbl, by= c("assignee_id" = "id"))  #add Names to top Ten
+  
+  patentsOfTopTen <- patent_assignee_tbl %>% inner_join(mostPatentsWorld, by="assignee_id") #get all Patents of top ten
+  
+  patentsCombined <- uspc_tbl %>% inner_join(patentsOfTopTen, by="patent_id") #combine the data with data from uspc tbl
+  
+  topMainClasses <- patentsCombined[,.N, by = mainclass_id] %>% arrange(desc(N)) %>% slice(1:5)
+  print(topMainClasses,n=Inf)
+
+```
+The data is to big to be handled by the journal, therefore the results for each question was calculated locally, stored and is loaded in the next chunk to generate the printout messages.
+
+```{r eval=TRUE, include = TRUE, message = FALSE,warning=FALSE}  
+#load locally stored data
+mostPatents <- read_rds("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/Question1_mostPatents.rds")
+mostPatents2019 <-read_rds("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/Question2_mostPatents2019.rds")
+topMainClasses <- read_rds("J:/OneDrive/Studium/Masterstudium/DataScience/DS_101/00_data/patent/Question3_topMainclasses.rds")
+
+#print out results
+print(mostPatents, n=Inf)
+print(mostPatents2019, n=Inf)
+print(topMainClasses,n=Inf)
+
+```
+
+The results show the top companies for the questions 1 and 2 as well as the top mainclasses for question 3. Additionally the number of patents for each company or mainclass are printed.
+The IDs of the mainclasses correspond to the following descriptions (source: https://www.uspto.gov/web/patents/classification/selectnumwithtitle.htm):
+
+* 257 = Active solid-state devices (e.g., transistors, solid-state diodes)
+* 438 = Semiconductor device manufacturing: process
+* 365 = Static information storage and retrieval
+* 370 = Multiplex communications
+* 358 = Facsimile and static presentation processing
+
+# Challenge 4 - Visualization Pt.1
+In challenge 4 the cummulative cases of COVID-19 are to be plotted for different countries.
+
+```{r plot3, fig.width=10, fig.height=7}
+#Challenge visualization
+
+library(tidyverse)
+library(lubridate)
+library("RColorBrewer")
+library(ggrepel)
+
+covid_data_tbl <- read_csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv") %>%   mutate(date= dmy(dateRep))
+
+countries <- c("Germany","United_Kingdom","France", "Spain", "United_States_of_America")
+
+covid_data_sorted <- covid_data_tbl %>% group_by(countriesAndTerritories) %>% filter(countriesAndTerritories %in% countries)
+
+
+#generating cumsums of cases
+covid_data_europe <- covid_data_tbl %>% group_by(continentExp) %>% filter(continentExp =="Europe") %>%arrange(by = date)  %>% mutate("Europe" = cumsum(cases)) 
+
+covid_data_germany <- covid_data_sorted %>% filter(countriesAndTerritories =="Germany") %>% arrange(by = date) %>% select(date,cases) %>% mutate("Germany" = cumsum(cases))
+covid_data_UK <- covid_data_sorted %>% filter(countriesAndTerritories =="United_Kingdom") %>% arrange(by = date) %>%select(date,cases) %>% mutate("United_Kingdom" = cumsum(cases))
+covid_data_france <- covid_data_sorted %>% filter(countriesAndTerritories =="France") %>% arrange(by = date) %>%select(date,cases) %>% mutate("France" = cumsum(cases))
+covid_data_spain <- covid_data_sorted %>% filter(countriesAndTerritories =="Spain") %>% arrange(by = date) %>%select(date,cases) %>% mutate("Spain" = cumsum(cases))
+covid_data_US <- covid_data_sorted %>% filter(countriesAndTerritories =="United_States_of_America") %>% arrange(by = date) %>%select(date,cases) %>% mutate("United_States" = cumsum(cases))
+
+dataCombined <- covid_data_germany %>%
+  left_join(covid_data_UK, by="date") %>%
+  left_join(covid_data_france, by="date")%>%
+  left_join(covid_data_spain, by="date") %>%
+  left_join(covid_data_US, by="date") %>%
+  select(date,Germany,United_Kingdom,France,Spain,United_States) 
+
+
+dataCombined <- dataCombined %>% ungroup() 
+dataCombinedPlot <- dataCombined %>% pivot_longer(.,cols = c(Germany,United_Kingdom,France,Spain,United_States), names_to= "Var", values_to = "Val" )
+dataLabels <- dataCombinedPlot %>% filter(date == dmy("05/12/2020"))
+#plotting
+dataCombinedPlot %>%
+  ggplot(aes( x= date, y = Val, fill = Var, color = Var)) +
+  scale_color_manual(values=c("#69b3a2", "purple", "black", "blue", "red"))+ 
+  theme_dark() +
+  geom_line() + 
+  geom_label_repel(
+    aes(label = Val), data = dataLabels,
+    fontface ="plain",color="black", size = 3,
+    force = 10
+  ) +
+  labs(
+    title = "COVID-19 confirmed cases",
+    x = "Year 2020",
+    y = "Cumulative cases",
+    color = "Country"
+  )+ theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::unit_format(unit = "M", scale = 1e-6)) +
+  scale_x_date(date_breaks = "1 month",
+               date_labels = "%B") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+# Challenge 5 - Visualization Pt.2
+In the last challenge the mortality rates of COVID-19 shall be visualized. The task is to plot a world map containing information about the mortality rates.
+
+```{r plot4, fig.width=12, fig.height=7}
+#Challenge 5
+library(mapdata)
+library(scales)
+world <- map_data("world")
+
+covid_data_world <- covid_data_tbl %>% 
+  mutate(across(countriesAndTerritories, str_replace_all, "_", " ")) %>%
+  mutate(countriesAndTerritories = case_when(
+    
+    countriesAndTerritories == "United Kingdom" ~ "UK",
+    countriesAndTerritories == "United States of America" ~ "USA",
+    countriesAndTerritories == "Czechia" ~ "Czech Republic",
+    TRUE ~ countriesAndTerritories
+    
+  ))
+
+#select 04.12.2020 as date from covidData
+covidDataMap <- covid_data_world %>% 
+  group_by(countriesAndTerritories) %>% arrange(date) %>%
+  mutate("total_deaths" = cumsum(deaths)) %>% 
+  ungroup() %>% mutate("mortality_rate" = total_deaths / popData2019) %>%
+  filter(date == dmy("04/12/2020"))
+  
+
+mortalityData <- covidDataMap %>% select(countriesAndTerritories,mortality_rate)
+
+#joining mortality rate with geographical data
+covidWorldMap <- world %>% left_join(mortalityData, by =c("region" = "countriesAndTerritories"))
+
+covidWorldMap %>% ggplot() +
+  geom_map(aes(map_id = region, x = long, y =lat, fill = mortality_rate), map = world,color = "darkgrey" ) +
+  scale_fill_continuous(breaks=breaks_width(0.00025),low ="#ea4440", high="#2f142c", labels = scales::label_percent()) +
+  labs(
+    title = "COVID-19 mortality rate",
+    x = "",
+    y = "",
+    fill = "mortality rate",
+    caption ="Date: 12/04/2020"
+  ) + theme(
+    axis.text.x=element_blank(),
+    axis.text.y=element_blank(),
+    axis.ticks=element_blank(),
+    axis.title.x=element_blank(),
+    axis.title.y=element_blank()
+  ) 
+
+```
